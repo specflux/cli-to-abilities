@@ -48,6 +48,142 @@ function summarizeAbility(a) {
   return `${a.name} — ${a.description || a.label}${flags ? ` [${flags}]` : ""}`;
 }
 
+/**
+ * Formats input_schema into human-readable parameter docs.
+ */
+function formatParameterDocs(inputSchema) {
+  if (!inputSchema?.properties || Object.keys(inputSchema.properties).length === 0) {
+    return "\n## Parameters\nNone.";
+  }
+
+  const required = new Set(inputSchema.required || []);
+  const lines = ["\n## Parameters\n"];
+
+  for (const [name, prop] of Object.entries(inputSchema.properties)) {
+    const isRequired = required.has(name);
+    const type = prop.type || "string";
+    const tag = isRequired ? "REQUIRED" : "optional";
+    let line = `- **${name}** (${type}, ${tag})`;
+
+    if (prop.description) {
+      line += `: ${prop.description}`;
+    }
+
+    if (prop.enum) {
+      line += `\n  Allowed values: ${prop.enum.map((v) => `\`${v}\``).join(", ")}`;
+    }
+
+    if (prop.default !== undefined) {
+      line += `\n  Default: \`${prop.default}\``;
+    }
+
+    lines.push(line);
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Formats output_schema into human-readable output docs.
+ */
+function formatOutputDocs(outputSchema) {
+  if (!outputSchema?.properties || Object.keys(outputSchema.properties).length === 0) {
+    return "";
+  }
+
+  const lines = ["\n## Output\n"];
+
+  for (const [name, prop] of Object.entries(outputSchema.properties)) {
+    let line = `- **${name}** (${prop.type || "any"})`;
+    if (prop.description) {
+      line += `: ${prop.description}`;
+    }
+    lines.push(line);
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Generates an example wp_abilities_run call from the schema.
+ */
+function formatExample(abilityName, inputSchema) {
+  const example = {};
+  const required = new Set(inputSchema?.required || []);
+  const props = inputSchema?.properties || {};
+
+  for (const [name, prop] of Object.entries(props)) {
+    if (!required.has(name) && Object.keys(props).length > 3) continue;
+
+    if (prop.enum) {
+      example[name] = prop.enum[0];
+    } else if (prop.type === "boolean") {
+      example[name] = true;
+    } else if (prop.type === "integer" || prop.type === "number") {
+      example[name] = 1;
+    } else {
+      example[name] = `<${name}>`;
+    }
+  }
+
+  if (Object.keys(example).length === 0 && Object.keys(props).length === 0) {
+    return `\n## Example\n\`\`\`\nwp_abilities_run(ability: "${abilityName}")\n\`\`\``;
+  }
+
+  return `\n## Example\n\`\`\`\nwp_abilities_run(\n  ability: "${abilityName}",\n  input: ${JSON.stringify(example, null, 4)}\n)\n\`\`\``;
+}
+
+/**
+ * Validates input against the ability's input_schema.
+ * Returns null if valid, or an error message string.
+ */
+function validateInput(input, inputSchema) {
+  if (!inputSchema?.properties) return null;
+
+  const errors = [];
+  const required = new Set(inputSchema.required || []);
+  const props = inputSchema.properties;
+
+  // Check required fields.
+  for (const name of required) {
+    if (input[name] === undefined || input[name] === null || input[name] === "") {
+      const prop = props[name] || {};
+      errors.push(
+        `Missing required parameter: "${name}"${prop.description ? ` (${prop.description})` : ""}`
+      );
+    }
+  }
+
+  // Check types and enum values.
+  for (const [name, value] of Object.entries(input)) {
+    const prop = props[name];
+    if (!prop) continue;
+
+    if (prop.enum && !prop.enum.includes(value)) {
+      errors.push(
+        `Invalid value for "${name}": got "${value}", expected one of: ${prop.enum.join(", ")}`
+      );
+    }
+
+    if (prop.type === "boolean" && typeof value !== "boolean") {
+      errors.push(`Parameter "${name}" should be boolean, got ${typeof value}`);
+    }
+
+    if ((prop.type === "integer" || prop.type === "number") && typeof value !== "number") {
+      errors.push(`Parameter "${name}" should be ${prop.type}, got ${typeof value}`);
+    }
+  }
+
+  // Warn about unknown parameters.
+  for (const name of Object.keys(input)) {
+    if (!props[name] && name !== "additional_fields") {
+      errors.push(`Unknown parameter: "${name}". Available: ${Object.keys(props).join(", ")}`);
+    }
+  }
+
+  return errors.length > 0 ? errors.join("\n") : null;
+}
+
 // ---------------------------------------------------------------------------
 // Tool 1: wp_abilities_list
 // Discover what abilities are available. Lightweight — just names & descriptions.
@@ -146,19 +282,32 @@ server.tool(
         };
       }
 
-      const detail = {
-        name: match.name,
-        label: match.label,
-        description: match.description,
-        category: match.category,
-        wp_cli_command: match.meta?.wp_cli_command || null,
-        annotations: match.meta?.annotations || {},
-        input_schema: match.input_schema || null,
-        output_schema: match.output_schema || null,
-      };
+      const lines = [];
+      lines.push(`# ${match.label || match.name}`);
+      lines.push(match.description || "");
+      if (match.meta?.wp_cli_command) {
+        lines.push(`\nCLI equivalent: \`${match.meta.wp_cli_command}\``);
+      }
+
+      // Annotations.
+      const ann = match.meta?.annotations || {};
+      const tags = [];
+      if (ann.readonly) tags.push("read-only");
+      if (ann.destructive) tags.push("DESTRUCTIVE");
+      if (ann.idempotent) tags.push("idempotent");
+      if (tags.length) lines.push(`\nBehavior: ${tags.join(", ")}`);
+
+      // Parameters.
+      lines.push(formatParameterDocs(match.input_schema));
+
+      // Output.
+      lines.push(formatOutputDocs(match.output_schema));
+
+      // Example.
+      lines.push(formatExample(match.name, match.input_schema));
 
       return {
-        content: [{ type: "text", text: JSON.stringify(detail, null, 2) }],
+        content: [{ type: "text", text: lines.join("\n") }],
       };
     } catch (err) {
       return {
@@ -195,6 +344,20 @@ server.tool(
             {
               type: "text",
               text: `Ability "${abilityName}" not found. Use wp_abilities_list to see available abilities.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      // Validate input against schema before calling WordPress.
+      const validationError = validateInput(input || {}, match.input_schema);
+      if (validationError) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Input validation failed for "${abilityName}":\n\n${validationError}\n\nUse wp_abilities_describe("${abilityName}") to see accepted parameters.`,
             },
           ],
           isError: true,
