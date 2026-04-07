@@ -1,0 +1,20 @@
+{
+  "name": "wp-cli-abilities-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server that auto-discovers WordPress Abilities and exposes them as tools",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "wp-abilities-mcp": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "GPL-2.0-or-later"
+}
