@@ -8,7 +8,6 @@ import { WordPressAbilitiesClient } from "./wp-client.js";
 const WP_URL = process.env.WP_URL || "http://localhost";
 const WP_USER = process.env.WP_USER || "";
 const WP_APP_PASSWORD = process.env.WP_APP_PASSWORD || "";
-const POLL_INTERVAL_MS = parseInt(process.env.WP_POLL_INTERVAL || "300000", 10); // 5 min
 
 const server = new McpServer({
   name: "wp-cli-abilities",
@@ -17,156 +16,228 @@ const server = new McpServer({
 
 const wpClient = new WordPressAbilitiesClient(WP_URL, WP_USER, WP_APP_PASSWORD);
 
+/** In-memory abilities cache. */
+let abilitiesCache = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 /**
- * Converts a JSON Schema property definition to a Zod schema for MCP tool
- * input validation.
+ * Returns cached abilities or fetches fresh from WordPress.
  */
-function jsonSchemaPropertyToZod(prop) {
-  const type = prop.type || "string";
-  let schema;
-
-  switch (type) {
-    case "boolean":
-      schema = z.boolean();
-      break;
-    case "integer":
-    case "number":
-      schema = z.number();
-      break;
-    case "array":
-      schema = z.array(z.any());
-      break;
-    case "object":
-      schema = z.record(z.string(), z.any());
-      break;
-    default:
-      if (prop.enum) {
-        schema = z.enum(prop.enum);
-      } else {
-        schema = z.string();
-      }
+async function getAbilities() {
+  const now = Date.now();
+  if (abilitiesCache && now - cacheTimestamp < CACHE_TTL_MS) {
+    return abilitiesCache;
   }
-
-  if (prop.description) {
-    schema = schema.describe(prop.description);
-  }
-
-  return schema;
+  abilitiesCache = await wpClient.listAbilities();
+  cacheTimestamp = now;
+  return abilitiesCache;
 }
 
 /**
- * Builds a Zod object schema from a JSON Schema `properties` map and
- * `required` array, suitable for McpServer.tool().
+ * Formats an ability into a compact one-line summary for listing.
  */
-function buildZodInputShape(inputSchema) {
-  if (!inputSchema || !inputSchema.properties) {
-    return {};
-  }
-
-  const shape = {};
-  const requiredFields = new Set(inputSchema.required || []);
-
-  for (const [key, prop] of Object.entries(inputSchema.properties)) {
-    let fieldSchema = jsonSchemaPropertyToZod(prop);
-    if (!requiredFields.has(key)) {
-      fieldSchema = fieldSchema.optional();
-    }
-    shape[key] = fieldSchema;
-  }
-
-  return shape;
-}
-
-/**
- * Registers a single WordPress Ability as an MCP tool.
- */
-function registerAbilityAsTool(ability) {
-  const toolName = ability.name.replace("/", "__");
-  const description = [
-    ability.description || ability.label,
-    ability.meta?.wp_cli_command ? `\nWP-CLI: ${ability.meta.wp_cli_command}` : "",
-    ability.meta?.annotations?.destructive ? "\n⚠️ Destructive operation" : "",
-    ability.meta?.annotations?.readonly ? "\n(read-only)" : "",
+function summarizeAbility(a) {
+  const flags = [
+    a.meta?.annotations?.readonly ? "read-only" : null,
+    a.meta?.annotations?.destructive ? "DESTRUCTIVE" : null,
   ]
     .filter(Boolean)
-    .join("");
+    .join(", ");
 
-  const inputShape = buildZodInputShape(ability.input_schema);
-
-  server.tool(toolName, description, inputShape, async (params) => {
-    try {
-      const result = await wpClient.executeAbility(ability.name, params);
-      return {
-        content: [
-          {
-            type: "text",
-            text: typeof result === "string" ? result : JSON.stringify(result, null, 2),
-          },
-        ],
-      };
-    } catch (err) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error executing ${ability.name}: ${err.message}`,
-          },
-        ],
-        isError: true,
-      };
-    }
-  });
+  return `${a.name} — ${a.description || a.label}${flags ? ` [${flags}]` : ""}`;
 }
 
-/**
- * Discovers abilities from WordPress and registers them all as MCP tools.
- */
-async function discoverAndRegister() {
-  try {
-    const abilities = await wpClient.listAbilities();
-    let count = 0;
-
-    for (const ability of abilities) {
-      registerAbilityAsTool(ability);
-      count++;
-    }
-
-    console.error(`[wp-cli-abilities] Registered ${count} abilities as MCP tools from ${WP_URL}`);
-  } catch (err) {
-    console.error(`[wp-cli-abilities] Failed to discover abilities: ${err.message}`);
-    console.error(`[wp-cli-abilities] Make sure WP_URL, WP_USER, and WP_APP_PASSWORD are set correctly.`);
-  }
-}
-
-// Also expose a meta-tool that lets the agent refresh the abilities list.
+// ---------------------------------------------------------------------------
+// Tool 1: wp_abilities_list
+// Discover what abilities are available. Lightweight — just names & descriptions.
+// ---------------------------------------------------------------------------
 server.tool(
-  "wp_abilities_refresh",
-  "Re-discover WordPress abilities. Use this if the site's plugins changed.",
-  {},
-  async () => {
+  "wp_abilities_list",
+  "List all WP-CLI abilities available on the WordPress site. Use this first to discover what commands you can run. Supports optional filtering by keyword or category.",
+  {
+    filter: z
+      .string()
+      .optional()
+      .describe("Filter abilities by keyword (matches name or description)"),
+    category: z
+      .string()
+      .optional()
+      .describe("Filter by category slug (e.g. 'wp-cli')"),
+  },
+  async ({ filter, category }) => {
     try {
-      const abilities = await wpClient.listAbilities();
+      let abilities = await getAbilities();
+
+      if (category) {
+        abilities = abilities.filter((a) => a.category === category);
+      }
+
+      if (filter) {
+        const lc = filter.toLowerCase();
+        abilities = abilities.filter(
+          (a) =>
+            (a.name || "").toLowerCase().includes(lc) ||
+            (a.description || "").toLowerCase().includes(lc) ||
+            (a.label || "").toLowerCase().includes(lc) ||
+            (a.meta?.wp_cli_command || "").toLowerCase().includes(lc)
+        );
+      }
+
+      if (abilities.length === 0) {
+        return {
+          content: [{ type: "text", text: "No abilities matched the filter." }],
+        };
+      }
+
+      const lines = abilities.map(summarizeAbility);
       return {
         content: [
           {
             type: "text",
-            text: `Discovered ${abilities.length} abilities. Restart the MCP server to pick up new tools.`,
+            text: `Found ${abilities.length} abilities:\n\n${lines.join("\n")}`,
           },
         ],
       };
     } catch (err) {
       return {
-        content: [{ type: "text", text: `Refresh failed: ${err.message}` }],
+        content: [{ type: "text", text: `Failed to list abilities: ${err.message}` }],
         isError: true,
       };
     }
   }
 );
 
-// Also expose a resource that lists all available abilities.
+// ---------------------------------------------------------------------------
+// Tool 2: wp_abilities_describe
+// Get full details (input schema, output schema, annotations) for one ability.
+// ---------------------------------------------------------------------------
+server.tool(
+  "wp_abilities_describe",
+  "Get full details about a specific WordPress ability including its input parameters, output schema, and annotations. Use this before running an ability to understand what parameters it accepts.",
+  {
+    ability: z.string().describe('Ability name, e.g. "wp-cli/plugin-list"'),
+  },
+  async ({ ability: abilityName }) => {
+    try {
+      const abilities = await getAbilities();
+      const match = abilities.find((a) => a.name === abilityName);
+
+      if (!match) {
+        // Try fuzzy match.
+        const lc = abilityName.toLowerCase();
+        const fuzzy = abilities.filter((a) => a.name.toLowerCase().includes(lc));
+        if (fuzzy.length > 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Ability "${abilityName}" not found. Did you mean:\n${fuzzy
+                  .slice(0, 10)
+                  .map((a) => `  - ${a.name}`)
+                  .join("\n")}`,
+              },
+            ],
+          };
+        }
+        return {
+          content: [{ type: "text", text: `Ability "${abilityName}" not found.` }],
+          isError: true,
+        };
+      }
+
+      const detail = {
+        name: match.name,
+        label: match.label,
+        description: match.description,
+        category: match.category,
+        wp_cli_command: match.meta?.wp_cli_command || null,
+        annotations: match.meta?.annotations || {},
+        input_schema: match.input_schema || null,
+        output_schema: match.output_schema || null,
+      };
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(detail, null, 2) }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text", text: `Error: ${err.message}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Tool 3: wp_abilities_run
+// Execute any ability by name with a JSON input object.
+// ---------------------------------------------------------------------------
+server.tool(
+  "wp_abilities_run",
+  "Execute a WordPress ability (WP-CLI command). First use wp_abilities_list to discover available abilities, then wp_abilities_describe to check parameters, then this tool to run it.",
+  {
+    ability: z.string().describe('Ability name, e.g. "wp-cli/plugin-list"'),
+    input: z
+      .record(z.string(), z.any())
+      .optional()
+      .describe("Input parameters as key-value pairs matching the ability's input_schema"),
+  },
+  async ({ ability: abilityName, input }) => {
+    try {
+      // Validate the ability exists before executing.
+      const abilities = await getAbilities();
+      const match = abilities.find((a) => a.name === abilityName);
+
+      if (!match) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Ability "${abilityName}" not found. Use wp_abilities_list to see available abilities.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      // Warn on destructive operations.
+      const isDestructive = match.meta?.annotations?.destructive;
+
+      const result = await wpClient.executeAbility(abilityName, input || {});
+
+      const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: isDestructive
+              ? `⚠️ Destructive command executed.\n\n${output}`
+              : output,
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error executing ${abilityName}: ${err.message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Resource: browsable abilities list
+// ---------------------------------------------------------------------------
 server.resource("abilities-list", "wp://abilities", async (uri) => {
   try {
-    const abilities = await wpClient.listAbilities();
+    const abilities = await getAbilities();
     const summary = abilities.map((a) => ({
       name: a.name,
       label: a.label,
@@ -199,12 +270,22 @@ server.resource("abilities-list", "wp://abilities", async (uri) => {
 });
 
 async function main() {
-  await discoverAndRegister();
+  // Pre-warm the cache so first tool call is fast.
+  try {
+    const abilities = await getAbilities();
+    console.error(
+      `[wp-cli-abilities] Discovered ${abilities.length} abilities from ${WP_URL}`
+    );
+  } catch (err) {
+    console.error(
+      `[wp-cli-abilities] Warning: could not pre-fetch abilities: ${err.message}`
+    );
+  }
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  console.error("[wp-cli-abilities] MCP server running on stdio");
+  console.error("[wp-cli-abilities] MCP server running (3 tools: list, describe, run)");
 }
 
 main().catch((err) => {

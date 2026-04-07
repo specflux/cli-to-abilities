@@ -57,7 +57,15 @@ GET /wp-json/wp/v2/abilities/wp-cli/plugin-list?status=active
 
 ## MCP Server (AI Agent Integration)
 
-The included MCP server auto-discovers all registered abilities and exposes them as MCP tools. Any MCP-compatible AI agent (Claude Code, Claude Desktop, etc.) can then call WP-CLI commands directly.
+The included MCP server exposes **3 tools** instead of one-per-command, so it stays fast regardless of how many WP-CLI commands your site has:
+
+| Tool | Purpose |
+|------|---------|
+| `wp_abilities_list` | Discover available abilities (with optional keyword/category filter) |
+| `wp_abilities_describe` | Get full input/output schema for a specific ability |
+| `wp_abilities_run` | Execute any ability by name with input parameters |
+
+The agent workflow is: **list → describe → run**. This keeps the tool count at 3 instead of 100+, so model performance stays sharp.
 
 ### Setup
 
@@ -108,11 +116,11 @@ Add to `claude_desktop_config.json`:
 
 ### How It Works
 
-1. On startup, the MCP server calls `GET /wp-json/wp/v2/abilities` to discover all registered abilities
-2. Each ability is registered as an MCP tool with its JSON Schema mapped to Zod validation
-3. When an agent calls a tool, the server POSTs to the ability's execute endpoint
-4. A `wp_abilities_refresh` meta-tool lets the agent re-discover abilities without restarting
-5. A `wp://abilities` resource provides a browsable list of all available abilities
+1. On startup, the MCP server pre-fetches abilities from `GET /wp-json/wp/v2/abilities` into a 5-minute cache
+2. Only 3 tools are registered (list, describe, run) — no matter how many abilities exist
+3. The agent calls `wp_abilities_list` to discover commands, `wp_abilities_describe` for parameter details, then `wp_abilities_run` to execute
+4. Results are cached in-memory to avoid repeated REST calls
+5. A `wp://abilities` resource provides a browsable JSON list
 
 ### Auth
 
