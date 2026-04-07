@@ -1,10 +1,23 @@
 <?php
 /**
  * Registers WP-CLI commands as WordPress Abilities.
+ *
+ * @package WP_CLI_Abilities
  */
 class WP_CLI_Ability_Registrar {
 
+	/**
+	 * WP-CLI detector instance.
+	 *
+	 * @var WP_CLI_Detector
+	 */
 	private WP_CLI_Detector $detector;
+
+	/**
+	 * Command parser instance.
+	 *
+	 * @var WP_CLI_Command_Parser
+	 */
 	private WP_CLI_Command_Parser $parser;
 
 	/**
@@ -82,6 +95,12 @@ class WP_CLI_Ability_Registrar {
 		'trash',
 	);
 
+	/**
+	 * Constructor.
+	 *
+	 * @param WP_CLI_Detector       $detector WP-CLI detector instance.
+	 * @param WP_CLI_Command_Parser $parser   Command parser instance.
+	 */
 	public function __construct( WP_CLI_Detector $detector, WP_CLI_Command_Parser $parser ) {
 		$this->detector = $detector;
 		$this->parser   = $parser;
@@ -97,10 +116,13 @@ class WP_CLI_Ability_Registrar {
 			return;
 		}
 
-		wp_register_ability_category( 'wp-cli', array(
-			'label'       => __( 'WP-CLI Commands', 'wp-cli-abilities' ),
-			'description' => __( 'WordPress CLI commands exposed as abilities for automation and AI agents.', 'wp-cli-abilities' ),
-		) );
+		wp_register_ability_category(
+			'wp-cli',
+			array(
+				'label'       => __( 'WP-CLI Commands', 'wp-cli-abilities' ),
+				'description' => __( 'WordPress CLI commands exposed as abilities for automation and AI agents.', 'wp-cli-abilities' ),
+			)
+		);
 	}
 
 	/**
@@ -117,13 +139,13 @@ class WP_CLI_Ability_Registrar {
 			return;
 		}
 
-		$commands              = $this->detector->discover_commands();
-		$allowed               = $this->get_allowed_commands();
-		$blocked               = $this->get_blocked_commands();
-		$destructive_enabled   = (bool) get_option( 'wp_cli_abilities_allow_destructive', false );
-		$eval_enabled          = (bool) get_option( 'wp_cli_abilities_allow_eval', false );
-		$registered            = 0;
-		$max_abilities         = (int) get_option( 'wp_cli_abilities_max', 200 );
+		$commands            = $this->detector->discover_commands();
+		$allowed             = $this->get_allowed_commands();
+		$blocked             = $this->get_blocked_commands();
+		$destructive_enabled = (bool) get_option( 'wp_cli_abilities_allow_destructive', false );
+		$eval_enabled        = (bool) get_option( 'wp_cli_abilities_allow_eval', false );
+		$registered          = 0;
+		$max_abilities       = (int) get_option( 'wp_cli_abilities_max', 200 );
 
 		foreach ( $commands as $command ) {
 			if ( $registered >= $max_abilities ) {
@@ -177,6 +199,9 @@ class WP_CLI_Ability_Registrar {
 
 	/**
 	 * Checks whether a command is in the hard denylist.
+	 *
+	 * @param string $name The command name.
+	 * @return bool True if the command is denied.
 	 */
 	private function is_denied( string $name ): bool {
 		// Exact match.
@@ -196,6 +221,9 @@ class WP_CLI_Ability_Registrar {
 
 	/**
 	 * Checks whether a command is destructive based on its subcommand.
+	 *
+	 * @param string $name The command name.
+	 * @return bool True if the command is destructive.
 	 */
 	private function is_destructive( string $name ): bool {
 		$parts      = explode( ' ', $name );
@@ -225,6 +253,10 @@ class WP_CLI_Ability_Registrar {
 
 	/**
 	 * Checks whether a command name matches any of the given prefixes.
+	 *
+	 * @param string   $name     The command name.
+	 * @param string[] $prefixes The prefixes to match against.
+	 * @return bool True if the name matches any prefix.
 	 */
 	private function matches_filter( string $name, array $prefixes ): bool {
 		foreach ( $prefixes as $prefix ) {

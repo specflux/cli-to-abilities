@@ -2,6 +2,8 @@
 /**
  * Guardrails for WP-CLI ability execution: audit logging, rate limiting,
  * and dry-run support.
+ *
+ * @package WP_CLI_Abilities
  */
 class WP_CLI_Guardrails {
 
@@ -19,18 +21,19 @@ class WP_CLI_Guardrails {
 	 * Checks rate limit before execution.
 	 *
 	 * @param int    $user_id      Current user ID.
-	 * @param string $ability_name Ability being executed.
+	 * @param string $ability_name Ability being executed (passed for filter extensibility).
 	 * @return true|WP_Error True if allowed, WP_Error if rate limited.
 	 */
-	public static function check_rate_limit( int $user_id, string $ability_name ) {
-		$limit    = (int) apply_filters( 'wp_cli_abilities_rate_limit', self::DEFAULT_RATE_LIMIT, $user_id );
-		$key      = 'wp_cli_abilities_rate_' . $user_id;
-		$current  = (int) get_transient( $key );
+	public static function check_rate_limit( int $user_id, string $ability_name ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Passed for filter extensibility.
+		$limit   = (int) apply_filters( 'wp_cli_abilities_rate_limit', self::DEFAULT_RATE_LIMIT, $user_id );
+		$key     = 'wp_cli_abilities_rate_' . $user_id;
+		$current = (int) get_transient( $key );
 
 		if ( $current >= $limit ) {
 			return new WP_Error(
 				'wp_cli_rate_limited',
 				sprintf(
+					// translators: %d is the maximum number of executions allowed per minute.
 					__( 'Rate limit exceeded: %d executions per minute. Try again shortly.', 'wp-cli-abilities' ),
 					$limit
 				),
@@ -72,7 +75,7 @@ class WP_CLI_Guardrails {
 		}
 
 		$log[] = $entry;
-		update_option( self::LOG_OPTION, $log, false ); // no autoload
+		update_option( self::LOG_OPTION, $log, false ); // No autoload.
 
 		/**
 		 * Fires after an ability execution is logged.
@@ -90,7 +93,7 @@ class WP_CLI_Guardrails {
 	 */
 	public static function get_log( int $limit = 50 ): array {
 		$log = get_option( self::LOG_OPTION, array() );
-		$log = array_reverse( $log ); // newest first
+		$log = array_reverse( $log ); // Newest first.
 		return array_slice( $log, 0, $limit );
 	}
 
@@ -103,6 +106,9 @@ class WP_CLI_Guardrails {
 
 	/**
 	 * Strips sensitive values from input before logging.
+	 *
+	 * @param array $input Input parameters to sanitize.
+	 * @return array Sanitized input with sensitive values redacted.
 	 */
 	private static function sanitize_log_input( array $input ): array {
 		$sensitive_keys = array( 'password', 'pass', 'secret', 'token', 'key', 'user_pass' );

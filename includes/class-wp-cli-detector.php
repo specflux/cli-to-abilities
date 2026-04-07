@@ -1,6 +1,8 @@
 <?php
 /**
  * Detects WP-CLI availability and discovers available commands.
+ *
+ * @package WP_CLI_Abilities
  */
 class WP_CLI_Detector {
 
@@ -143,6 +145,10 @@ class WP_CLI_Detector {
 
 	/**
 	 * Recursively parses a WP-CLI command object into a flat list.
+	 *
+	 * @param string $prefix  The command name prefix.
+	 * @param object $command The WP-CLI command object.
+	 * @return array Flat list of command descriptors.
 	 */
 	private function parse_command_object( string $prefix, $command ): array {
 		$commands = array();
@@ -204,6 +210,10 @@ class WP_CLI_Detector {
 
 	/**
 	 * Recursively flattens the JSON command tree from `wp cli cmd-dump`.
+	 *
+	 * @param array  $node   The command tree node.
+	 * @param string $prefix The command name prefix.
+	 * @return array Flat list of command descriptors.
 	 */
 	private function flatten_command_tree( array $node, string $prefix = '' ): array {
 		$commands = array();
@@ -236,12 +246,15 @@ class WP_CLI_Detector {
 
 	/**
 	 * Builds a synopsis string from the structured synopsis array.
+	 *
+	 * @param array $parts The structured synopsis parts.
+	 * @return string The assembled synopsis string.
 	 */
 	private function build_synopsis_string( array $parts ): string {
 		$pieces = array();
 		foreach ( $parts as $part ) {
-			$type = $part['type'] ?? '';
-			$pname = $part['name'] ?? '';
+			$type     = $part['type'] ?? '';
+			$pname    = $part['name'] ?? '';
 			$optional = ! empty( $part['optional'] );
 
 			switch ( $type ) {
@@ -249,7 +262,7 @@ class WP_CLI_Detector {
 					$pieces[] = $optional ? "[<$pname>]" : "<$pname>";
 					break;
 				case 'assoc':
-					$token = "--$pname=<value>";
+					$token    = "--$pname=<value>";
 					$pieces[] = $optional ? "[$token]" : $token;
 					break;
 				case 'flag':
@@ -265,6 +278,10 @@ class WP_CLI_Detector {
 
 	/**
 	 * Fallback command discovery using `wp help` text parsing.
+	 *
+	 * @param string $wp_bin  The escaped WP-CLI binary path.
+	 * @param string $wp_path The escaped WordPress installation path.
+	 * @return array Array of command descriptors.
 	 */
 	private function discover_commands_fallback( string $wp_bin, string $wp_path ): array {
 		$output = shell_exec(
@@ -313,14 +330,19 @@ class WP_CLI_Detector {
 
 	/**
 	 * Discovers subcommands for a given top-level command via text parsing.
+	 *
+	 * @param string $wp_bin      The escaped WP-CLI binary path.
+	 * @param string $wp_path     The escaped WordPress installation path.
+	 * @param string $parent_name The parent command name.
+	 * @return array Array of subcommand descriptors.
 	 */
-	private function discover_subcommands_fallback( string $wp_bin, string $wp_path, string $parent ): array {
+	private function discover_subcommands_fallback( string $wp_bin, string $wp_path, string $parent_name ): array {
 		$output = shell_exec(
 			sprintf(
 				'%s --path=%s help %s 2>/dev/null',
 				$wp_bin,
 				$wp_path,
-				escapeshellarg( $parent )
+				escapeshellarg( $parent_name )
 			)
 		);
 

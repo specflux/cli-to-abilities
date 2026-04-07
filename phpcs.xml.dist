@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<ruleset name="WP-CLI Abilities">
+    <description>PHPCS rules for WP-CLI to Abilities plugin</description>
+
+    <!-- What to scan -->
+    <file>./wp-cli-abilities.php</file>
+    <file>./uninstall.php</file>
+    <file>./includes/</file>
+
+    <!-- Exclude tests and vendor -->
+    <exclude-pattern>./tests/*</exclude-pattern>
+    <exclude-pattern>./vendor/*</exclude-pattern>
+    <exclude-pattern>./mcp-server/*</exclude-pattern>
+
+    <!-- Show progress and sniff codes -->
+    <arg value="sp"/>
+    <arg name="colors"/>
+    <arg name="extensions" value="php"/>
+
+    <!-- WordPress coding standards -->
+    <rule ref="WordPress">
+        <!-- Allow short array syntax -->
+        <exclude name="Universal.Arrays.DisallowShortArraySyntax"/>
+        <!-- Allow short ternary -->
+        <exclude name="Universal.Operators.DisallowShortTernary.Found"/>
+        <!-- File naming: our classes use class- prefix already -->
+        <exclude name="WordPress.Files.FileName.InvalidClassFileName"/>
+    </rule>
+
+    <!-- shell_exec/exec are intentional — the plugin's core purpose is running WP-CLI -->
+    <rule ref="WordPress.PHP.DiscouragedPHPFunctions.system_calls_shell_exec">
+        <severity>0</severity>
+    </rule>
+    <rule ref="WordPress.PHP.DiscouragedPHPFunctions.system_calls_exec">
+        <severity>0</severity>
+    </rule>
+
+    <!-- Direct DB query in uninstall.php is intentional (cleanup transients) -->
+    <rule ref="WordPress.DB.DirectDatabaseQuery">
+        <exclude-pattern>./uninstall.php</exclude-pattern>
+    </rule>
+
+    <!-- Text domain -->
+    <rule ref="WordPress.WP.I18n">
+        <properties>
+            <property name="text_domain" type="array">
+                <element value="wp-cli-abilities"/>
+            </property>
+        </properties>
+    </rule>
+
+    <!-- Minimum WP version -->
+    <rule ref="WordPress.WP.DeprecatedFunctions">
+        <properties>
+            <property name="minimum_wp_version" value="6.9"/>
+        </properties>
+    </rule>
+</ruleset>

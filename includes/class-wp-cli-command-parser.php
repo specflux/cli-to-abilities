@@ -1,6 +1,8 @@
 <?php
 /**
  * Parses WP-CLI command descriptors into Abilities API-compatible structures.
+ *
+ * @package WP_CLI_Abilities
  */
 class WP_CLI_Command_Parser {
 
@@ -15,27 +17,27 @@ class WP_CLI_Command_Parser {
 	 * @var array<string, string>
 	 */
 	private const CAPABILITY_MAP = array(
-		'plugin'  => 'activate_plugins',
-		'theme'   => 'switch_themes',
-		'user'    => 'list_users',
-		'post'    => 'edit_posts',
-		'comment' => 'moderate_comments',
-		'option'  => 'manage_options',
-		'media'   => 'upload_files',
-		'menu'    => 'edit_theme_options',
-		'widget'  => 'edit_theme_options',
-		'sidebar' => 'edit_theme_options',
-		'site'    => 'manage_sites',
-		'network' => 'manage_network',
-		'cron'    => 'manage_options',
-		'cache'   => 'manage_options',
-		'db'      => 'manage_options',
-		'config'  => 'manage_options',
-		'core'    => 'update_core',
-		'rewrite' => 'manage_options',
-		'role'    => 'promote_users',
-		'cap'     => 'promote_users',
-		'term'    => 'manage_categories',
+		'plugin'   => 'activate_plugins',
+		'theme'    => 'switch_themes',
+		'user'     => 'list_users',
+		'post'     => 'edit_posts',
+		'comment'  => 'moderate_comments',
+		'option'   => 'manage_options',
+		'media'    => 'upload_files',
+		'menu'     => 'edit_theme_options',
+		'widget'   => 'edit_theme_options',
+		'sidebar'  => 'edit_theme_options',
+		'site'     => 'manage_sites',
+		'network'  => 'manage_network',
+		'cron'     => 'manage_options',
+		'cache'    => 'manage_options',
+		'db'       => 'manage_options',
+		'config'   => 'manage_options',
+		'core'     => 'update_core',
+		'rewrite'  => 'manage_options',
+		'role'     => 'promote_users',
+		'cap'      => 'promote_users',
+		'term'     => 'manage_categories',
 		'taxonomy' => 'manage_categories',
 	);
 
@@ -80,10 +82,10 @@ class WP_CLI_Command_Parser {
 	 * @return array Ability args compatible with wp_register_ability().
 	 */
 	public function to_ability_args( array $command ): array {
-		$name        = $command['name'];
-		$parts       = explode( ' ', $name );
-		$namespace   = $parts[0] ?? 'wp';
-		$subcommand  = $parts[ count( $parts ) - 1 ] ?? '';
+		$name       = $command['name'];
+		$parts      = explode( ' ', $name );
+		$namespace  = $parts[0] ?? 'wp';
+		$subcommand = $parts[ count( $parts ) - 1 ] ?? '';
 
 		$ability_name = $this->build_ability_name( $name );
 		$label        = $this->build_label( $name );
@@ -107,12 +109,12 @@ class WP_CLI_Command_Parser {
 				'execute_callback'    => $this->build_execute_callback( $name ),
 				'permission_callback' => $this->build_permission_callback( $capability ),
 				'meta'                => array(
-					'annotations' => array(
+					'annotations'    => array(
 						'readonly'    => $is_readonly,
 						'destructive' => $is_destructive,
 						'idempotent'  => $is_readonly,
 					),
-					'show_in_rest' => true,
+					'show_in_rest'   => true,
 					'wp_cli_command' => "wp $name",
 				),
 			),
@@ -122,7 +124,10 @@ class WP_CLI_Command_Parser {
 	/**
 	 * Builds a namespaced ability name from a WP-CLI command string.
 	 *
-	 * e.g. "plugin list" -> "wp-cli/plugin-list"
+	 * Example: "plugin list" becomes "wp-cli/plugin-list".
+	 *
+	 * @param string $command_name The WP-CLI command name.
+	 * @return string The namespaced ability name.
 	 */
 	public function build_ability_name( string $command_name ): string {
 		$slug = str_replace( ' ', '-', trim( $command_name ) );
@@ -132,6 +137,9 @@ class WP_CLI_Command_Parser {
 
 	/**
 	 * Builds a human-readable label.
+	 *
+	 * @param string $command_name The WP-CLI command name.
+	 * @return string The human-readable label.
 	 */
 	private function build_label( string $command_name ): string {
 		$parts = explode( ' ', $command_name );
@@ -150,6 +158,9 @@ class WP_CLI_Command_Parser {
 	 *   [--flag]                     -> optional boolean flag
 	 *   [--format=<format>]          -> optional with named value
 	 *   [--<field>=<value>]          -> generic key-value pairs
+	 *
+	 * @param string $synopsis The WP-CLI synopsis string.
+	 * @return array JSON Schema array for the input.
 	 */
 	public function parse_synopsis_to_schema( string $synopsis ): array {
 		if ( empty( trim( $synopsis ) ) ) {
@@ -162,8 +173,8 @@ class WP_CLI_Command_Parser {
 		$properties = array();
 		$required   = array();
 
-		// Match all tokens in the synopsis.
-		preg_match_all( '/\[?-{0,2}<?[\w\-]+=?<?[\w\-]*>?\]?/', $synopsis, $matches );
+		// Match all tokens in the synopsis — handles positionals, flags, assoc args, and generic [--<field>=<value>].
+		preg_match_all( '/\[?--<[\w-]+>=<[\w-]+>\]?|\[?-{0,2}<?[\w\-]+=?<?[\w\-]*>?\]?/', $synopsis, $matches );
 
 		foreach ( $matches[0] as $token ) {
 			$token = trim( $token );
@@ -191,7 +202,7 @@ class WP_CLI_Command_Parser {
 				);
 
 				if ( 'format' === $m[1] ) {
-					$prop['enum'] = array( 'table', 'csv', 'json', 'yaml', 'count', 'ids' );
+					$prop['enum']        = array( 'table', 'csv', 'json', 'yaml', 'count', 'ids' );
 					$prop['description'] = 'Output format.';
 				}
 
@@ -218,8 +229,8 @@ class WP_CLI_Command_Parser {
 			// Generic: --<field>=<value>
 			if ( preg_match( '/^--<([\w\-]+)>=<([\w\-]+)>$/', $clean ) ) {
 				$properties['additional_fields'] = array(
-					'type'        => 'object',
-					'description' => 'Additional field=value pairs.',
+					'type'                 => 'object',
+					'description'          => 'Additional field=value pairs.',
 					'additionalProperties' => array( 'type' => 'string' ),
 				);
 				continue;
@@ -240,11 +251,14 @@ class WP_CLI_Command_Parser {
 
 	/**
 	 * Builds a generic output schema based on the subcommand type.
+	 *
+	 * @param string $subcommand The subcommand name.
+	 * @return array JSON Schema array for the output.
 	 */
 	private function build_output_schema( string $subcommand ): array {
 		if ( in_array( $subcommand, array( 'list', 'search' ), true ) ) {
 			return array(
-				'type'  => 'object',
+				'type'       => 'object',
 				'properties' => array(
 					'items' => array(
 						'type'        => 'array',
@@ -261,7 +275,7 @@ class WP_CLI_Command_Parser {
 
 		if ( in_array( $subcommand, array( 'get', 'status', 'path', 'check' ), true ) ) {
 			return array(
-				'type'  => 'object',
+				'type'       => 'object',
 				'properties' => array(
 					'data' => array(
 						'type'        => 'object',
@@ -272,7 +286,7 @@ class WP_CLI_Command_Parser {
 		}
 
 		return array(
-			'type'  => 'object',
+			'type'       => 'object',
 			'properties' => array(
 				'success' => array(
 					'type'        => 'boolean',
@@ -288,6 +302,9 @@ class WP_CLI_Command_Parser {
 
 	/**
 	 * Builds the execute callback for a WP-CLI command.
+	 *
+	 * @param string $command_name The WP-CLI command name.
+	 * @return callable The execute callback.
 	 */
 	private function build_execute_callback( string $command_name ): callable {
 		return function ( $input = array() ) use ( $command_name ) {
@@ -339,17 +356,24 @@ class WP_CLI_Command_Parser {
 
 	/**
 	 * Executes the command internally via WP_CLI::runcommand().
+	 *
+	 * @param string $command_name The WP-CLI command name.
+	 * @param array  $input        Input parameters.
+	 * @return array|WP_Error Execution result or error.
 	 */
 	private function execute_internal( string $command_name, array $input ): array|WP_Error {
 		$cmd_string = $this->build_command_string( $command_name, $input );
 
 		try {
-			$result = \WP_CLI::runcommand( $cmd_string, array(
-				'return'     => true,
-				'parse'      => 'json',
-				'launch'     => false,
-				'exit_error' => false,
-			) );
+			$result = \WP_CLI::runcommand(
+				$cmd_string,
+				array(
+					'return'     => true,
+					'parse'      => 'json',
+					'launch'     => false,
+					'exit_error' => false,
+				)
+			);
 
 			return array(
 				'success' => true,
@@ -360,13 +384,18 @@ class WP_CLI_Command_Parser {
 			return new WP_Error(
 				'wp_cli_execution_failed',
 				$e->getMessage(),
-				array( 'status' => 500, 'command' => "wp $command_name" )
+				array(
+					'status'  => 500,
+					'command' => "wp $command_name",
+				)
 			);
 		}
 	}
 
 	/**
 	 * Checks whether shell execution functions are available.
+	 *
+	 * @return bool True if shell execution is available.
 	 */
 	private function can_exec(): bool {
 		$disabled = explode( ',', ini_get( 'disable_functions' ) ?: '' );
@@ -378,6 +407,10 @@ class WP_CLI_Command_Parser {
 
 	/**
 	 * Executes the command externally by shelling out to the wp binary.
+	 *
+	 * @param string $command_name The WP-CLI command name.
+	 * @param array  $input        Input parameters.
+	 * @return array|WP_Error Execution result or error.
 	 */
 	private function execute_external( string $command_name, array $input ): array|WP_Error {
 		if ( ! $this->can_exec() ) {
@@ -408,7 +441,7 @@ class WP_CLI_Command_Parser {
 			? ' --format=json'
 			: '';
 
-		$timeout  = (int) apply_filters( 'wp_cli_abilities_exec_timeout', 30 );
+		$timeout         = (int) apply_filters( 'wp_cli_abilities_exec_timeout', 30 );
 		$has_timeout_cmd = (bool) shell_exec( 'command -v timeout 2>/dev/null' );
 
 		$full_cmd = $has_timeout_cmd
@@ -440,7 +473,10 @@ class WP_CLI_Command_Parser {
 			return new WP_Error(
 				'wp_cli_binary_output',
 				__( 'Command produced binary output which cannot be returned as structured data.', 'wp-cli-abilities' ),
-				array( 'status' => 422, 'command' => "wp $command_name" )
+				array(
+					'status'  => 422,
+					'command' => "wp $command_name",
+				)
 			);
 		}
 
@@ -449,10 +485,14 @@ class WP_CLI_Command_Parser {
 			return new WP_Error(
 				'wp_cli_timeout',
 				sprintf(
+					// translators: %d is the number of seconds before the command timed out.
 					__( 'WP-CLI command timed out after %d seconds.', 'wp-cli-abilities' ),
 					$timeout
 				),
-				array( 'status' => 504, 'command' => "wp $command_name" )
+				array(
+					'status'  => 504,
+					'command' => "wp $command_name",
+				)
 			);
 		}
 
@@ -466,7 +506,11 @@ class WP_CLI_Command_Parser {
 			return new WP_Error(
 				'wp_cli_command_failed',
 				$error_msg,
-				array( 'status' => 500, 'command' => "wp $command_name", 'exit_code' => $return_code )
+				array(
+					'status'    => 500,
+					'command'   => "wp $command_name",
+					'exit_code' => $return_code,
+				)
 			);
 		}
 
@@ -493,6 +537,9 @@ class WP_CLI_Command_Parser {
 	 *
 	 * For "plugin list" returns "list". For "media regenerate" returns "regenerate".
 	 * Splits on spaces, not hyphens, so "regenerate-thumbnails" stays intact.
+	 *
+	 * @param string $command_name The WP-CLI command name.
+	 * @return string The subcommand portion.
 	 */
 	private function get_subcommand( string $command_name ): string {
 		$parts = explode( ' ', trim( $command_name ) );
@@ -503,6 +550,10 @@ class WP_CLI_Command_Parser {
 	 * Assembles the WP-CLI command string from input parameters.
 	 *
 	 * Keys are validated against a strict allowlist pattern to prevent injection.
+	 *
+	 * @param string $command_name The WP-CLI command name.
+	 * @param array  $input        Input parameters.
+	 * @return string The assembled command string.
 	 */
 	private function build_command_string( string $command_name, array $input ): string {
 		$parts = array( $command_name );
@@ -545,6 +596,9 @@ class WP_CLI_Command_Parser {
 
 	/**
 	 * Builds a permission callback for a given WordPress capability.
+	 *
+	 * @param string $capability The WordPress capability to check.
+	 * @return callable The permission callback.
 	 */
 	public function build_permission_callback( string $capability ): callable {
 		return function () use ( $capability ): bool {

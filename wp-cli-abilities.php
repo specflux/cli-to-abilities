@@ -11,6 +11,8 @@
  * Requires at least: 6.9
  * Requires PHP: 7.4
  * Text Domain: wp-cli-abilities
+ *
+ * @package WP_CLI_Abilities
  */
 
 if ( ! defined( 'ABSPATH' ) ) {

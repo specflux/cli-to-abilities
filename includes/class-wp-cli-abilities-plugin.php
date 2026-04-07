@@ -1,13 +1,35 @@
 <?php
 /**
  * Main plugin orchestrator.
+ *
+ * @package WP_CLI_Abilities
  */
 class WP_CLI_Abilities_Plugin {
 
+	/**
+	 * WP-CLI detector instance.
+	 *
+	 * @var WP_CLI_Detector
+	 */
 	private WP_CLI_Detector $detector;
+
+	/**
+	 * Command parser instance.
+	 *
+	 * @var WP_CLI_Command_Parser
+	 */
 	private WP_CLI_Command_Parser $parser;
+
+	/**
+	 * Ability registrar instance.
+	 *
+	 * @var WP_CLI_Ability_Registrar
+	 */
 	private WP_CLI_Ability_Registrar $registrar;
 
+	/**
+	 * Constructor.
+	 */
 	public function __construct() {
 		$this->detector  = new WP_CLI_Detector();
 		$this->parser    = new WP_CLI_Command_Parser();
@@ -80,18 +102,24 @@ class WP_CLI_Abilities_Plugin {
 	 * Registers the lightweight REST route for cache invalidation.
 	 */
 	public function register_rest_routes(): void {
-		register_rest_route( 'wp-cli-abilities/v1', '/version', array(
-			'methods'             => 'GET',
-			'callback'            => function () {
-				return rest_ensure_response( array(
-					'version' => get_option( 'wp_cli_abilities_version', '' ),
-				) );
-			},
-			// Requires authentication — prevents leaking that plugin is active.
-			'permission_callback' => function () {
-				return current_user_can( 'manage_options' );
-			},
-		) );
+		register_rest_route(
+			'wp-cli-abilities/v1',
+			'/version',
+			array(
+				'methods'             => 'GET',
+				'callback'            => function () {
+					return rest_ensure_response(
+						array(
+							'version' => get_option( 'wp_cli_abilities_version', '' ),
+						)
+					);
+				},
+				// Requires authentication — prevents leaking that plugin is active.
+				'permission_callback' => function () {
+					return current_user_can( 'manage_options' );
+				},
+			)
+		);
 	}
 
 	/**
@@ -111,41 +139,65 @@ class WP_CLI_Abilities_Plugin {
 	 * Registers plugin settings.
 	 */
 	public function register_settings(): void {
-		register_setting( 'wp_cli_abilities', 'wp_cli_abilities_allowed', array(
-			'type'              => 'string',
-			'sanitize_callback' => 'sanitize_text_field',
-			'default'           => '',
-		) );
+		register_setting(
+			'wp_cli_abilities',
+			'wp_cli_abilities_allowed',
+			array(
+				'type'              => 'string',
+				'sanitize_callback' => 'sanitize_text_field',
+				'default'           => '',
+			)
+		);
 
-		register_setting( 'wp_cli_abilities', 'wp_cli_abilities_blocked', array(
-			'type'              => 'string',
-			'sanitize_callback' => 'sanitize_text_field',
-			'default'           => '',
-		) );
+		register_setting(
+			'wp_cli_abilities',
+			'wp_cli_abilities_blocked',
+			array(
+				'type'              => 'string',
+				'sanitize_callback' => 'sanitize_text_field',
+				'default'           => '',
+			)
+		);
 
-		register_setting( 'wp_cli_abilities', 'wp_cli_abilities_max', array(
-			'type'              => 'integer',
-			'sanitize_callback' => 'absint',
-			'default'           => 200,
-		) );
+		register_setting(
+			'wp_cli_abilities',
+			'wp_cli_abilities_max',
+			array(
+				'type'              => 'integer',
+				'sanitize_callback' => 'absint',
+				'default'           => 200,
+			)
+		);
 
-		register_setting( 'wp_cli_abilities', 'wp_cli_abilities_allow_destructive', array(
-			'type'              => 'boolean',
-			'sanitize_callback' => 'rest_sanitize_boolean',
-			'default'           => false,
-		) );
+		register_setting(
+			'wp_cli_abilities',
+			'wp_cli_abilities_allow_destructive',
+			array(
+				'type'              => 'boolean',
+				'sanitize_callback' => 'rest_sanitize_boolean',
+				'default'           => false,
+			)
+		);
 
-		register_setting( 'wp_cli_abilities', 'wp_cli_abilities_allow_eval', array(
-			'type'              => 'boolean',
-			'sanitize_callback' => 'rest_sanitize_boolean',
-			'default'           => false,
-		) );
+		register_setting(
+			'wp_cli_abilities',
+			'wp_cli_abilities_allow_eval',
+			array(
+				'type'              => 'boolean',
+				'sanitize_callback' => 'rest_sanitize_boolean',
+				'default'           => false,
+			)
+		);
 
-		register_setting( 'wp_cli_abilities', 'wp_cli_abilities_audit_enabled', array(
-			'type'              => 'boolean',
-			'sanitize_callback' => 'rest_sanitize_boolean',
-			'default'           => true,
-		) );
+		register_setting(
+			'wp_cli_abilities',
+			'wp_cli_abilities_audit_enabled',
+			array(
+				'type'              => 'boolean',
+				'sanitize_callback' => 'rest_sanitize_boolean',
+				'default'           => true,
+			)
+		);
 
 		add_settings_section(
 			'wp_cli_abilities_main',
@@ -354,7 +406,12 @@ class WP_CLI_Abilities_Plugin {
 						<?php endforeach; ?>
 						<?php if ( $command_count > 50 ) : ?>
 						<tr>
-							<td colspan="3"><em><?php printf( esc_html__( '... and %d more commands', 'wp-cli-abilities' ), $command_count - 50 ); ?></em></td>
+							<td colspan="3"><em>
+							<?php
+							// translators: %d is the number of additional commands not shown.
+							printf( esc_html__( '... and %d more commands', 'wp-cli-abilities' ), intval( $command_count - 50 ) );
+							?>
+						</em></td>
 						</tr>
 						<?php endif; ?>
 					</tbody>
@@ -365,7 +422,7 @@ class WP_CLI_Abilities_Plugin {
 			<div class="card" style="max-width: 800px;">
 				<h2><?php esc_html_e( 'Cache', 'wp-cli-abilities' ); ?></h2>
 				<p><?php esc_html_e( 'Command discovery results are cached for 1 hour. The cache also clears automatically when plugins are activated/deactivated or the theme is switched.', 'wp-cli-abilities' ); ?></p>
-				<?php if ( isset( $_GET['cache_cleared'] ) ) : ?>
+				<?php if ( isset( $_GET['cache_cleared'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only display check. ?>
 					<div class="notice notice-success inline"><p><?php esc_html_e( 'Cache cleared.', 'wp-cli-abilities' ); ?></p></div>
 				<?php endif; ?>
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
@@ -380,12 +437,15 @@ class WP_CLI_Abilities_Plugin {
 }
 
 // Handle the cache-clear admin-post action.
-add_action( 'admin_post_wp_cli_abilities_clear_cache', function () {
-	if ( ! current_user_can( 'manage_options' ) ) {
-		wp_die( esc_html__( 'Unauthorized', 'wp-cli-abilities' ) );
+add_action(
+	'admin_post_wp_cli_abilities_clear_cache',
+	function () {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Unauthorized', 'wp-cli-abilities' ) );
+		}
+		check_admin_referer( 'wp_cli_abilities_clear_cache' );
+		wp_cli_abilities()->clear_command_cache();
+		wp_safe_redirect( add_query_arg( 'cache_cleared', '1', admin_url( 'options-general.php?page=wp-cli-abilities' ) ) );
+		exit;
 	}
-	check_admin_referer( 'wp_cli_abilities_clear_cache' );
-	wp_cli_abilities()->clear_command_cache();
-	wp_safe_redirect( add_query_arg( 'cache_cleared', '1', admin_url( 'options-general.php?page=wp-cli-abilities' ) ) );
-	exit;
-} );
+);

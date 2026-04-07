@@ -3,6 +3,8 @@
  * Fired when the plugin is uninstalled.
  *
  * Cleans up all options and transients created by the plugin.
+ *
+ * @package WP_CLI_Abilities
  */
 
 if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
