@@ -92,8 +92,9 @@ class WP_CLI_Detector {
 			return $this->commands_cache;
 		}
 
+		// Use site transient so multisite shares one cache (WP-CLI is system-wide).
 		$transient_key = 'wp_cli_abilities_commands';
-		$cached        = get_transient( $transient_key );
+		$cached        = get_site_transient( $transient_key );
 		if ( false !== $cached ) {
 			$this->commands_cache = $cached;
 			return $cached;
@@ -108,7 +109,7 @@ class WP_CLI_Detector {
 		}
 
 		// Cache for 1 hour.
-		set_transient( $transient_key, $commands, HOUR_IN_SECONDS );
+		set_site_transient( $transient_key, $commands, HOUR_IN_SECONDS );
 		$this->commands_cache = $commands;
 
 		return $commands;
@@ -119,7 +120,7 @@ class WP_CLI_Detector {
 	 */
 	public function clear_cache(): void {
 		$this->commands_cache = null;
-		delete_transient( 'wp_cli_abilities_commands' );
+		delete_site_transient( 'wp_cli_abilities_commands' );
 	}
 
 	/**

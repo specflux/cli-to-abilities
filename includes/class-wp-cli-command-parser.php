@@ -384,16 +384,25 @@ class WP_CLI_Command_Parser {
 			? ' --format=json'
 			: '';
 
-		$timeout = (int) apply_filters( 'wp_cli_abilities_exec_timeout', 30 );
+		$timeout  = (int) apply_filters( 'wp_cli_abilities_exec_timeout', 30 );
+		$has_timeout_cmd = (bool) shell_exec( 'command -v timeout 2>/dev/null' );
 
-		$full_cmd = sprintf(
-			'timeout %d %s --path=%s %s --no-interaction%s 2>&1',
-			$timeout,
-			escapeshellarg( $wp_bin ),
-			escapeshellarg( ABSPATH ),
-			$cmd_string,
-			$format_flag
-		);
+		$full_cmd = $has_timeout_cmd
+			? sprintf(
+				'timeout %d %s --path=%s %s --no-interaction%s 2>&1',
+				$timeout,
+				escapeshellarg( $wp_bin ),
+				escapeshellarg( ABSPATH ),
+				$cmd_string,
+				$format_flag
+			)
+			: sprintf(
+				'%s --path=%s %s --no-interaction%s 2>&1',
+				escapeshellarg( $wp_bin ),
+				escapeshellarg( ABSPATH ),
+				$cmd_string,
+				$format_flag
+			);
 
 		$output      = array();
 		$return_code = 0;
@@ -402,8 +411,17 @@ class WP_CLI_Command_Parser {
 
 		$raw_output = implode( "\n", $output );
 
+		// Detect binary output — if first 512 bytes contain null bytes, bail.
+		if ( strlen( $raw_output ) > 0 && str_contains( substr( $raw_output, 0, 512 ), "\0" ) ) {
+			return new WP_Error(
+				'wp_cli_binary_output',
+				__( 'Command produced binary output which cannot be returned as structured data.', 'wp-cli-abilities' ),
+				array( 'status' => 422, 'command' => "wp $command_name" )
+			);
+		}
+
 		// Exit code 124 = timeout killed the process.
-		if ( 124 === $return_code ) {
+		if ( 124 === $return_code && $has_timeout_cmd ) {
 			return new WP_Error(
 				'wp_cli_timeout',
 				sprintf(
@@ -415,9 +433,15 @@ class WP_CLI_Command_Parser {
 		}
 
 		if ( 0 !== $return_code ) {
+			// Truncate large error output to prevent bloated responses.
+			$error_msg = $raw_output ?: __( 'WP-CLI command failed.', 'wp-cli-abilities' );
+			if ( strlen( $error_msg ) > 2048 ) {
+				$error_msg = substr( $error_msg, 0, 2048 ) . "\n...(truncated)";
+			}
+
 			return new WP_Error(
 				'wp_cli_command_failed',
-				$raw_output ?: __( 'WP-CLI command failed.', 'wp-cli-abilities' ),
+				$error_msg,
 				array( 'status' => 500, 'command' => "wp $command_name", 'exit_code' => $return_code )
 			);
 		}
@@ -430,22 +454,25 @@ class WP_CLI_Command_Parser {
 				'data'    => $decoded,
 				'items'   => $is_list ? $decoded : null,
 				'count'   => $is_list ? count( $decoded ) : null,
-				'message' => 'Command executed successfully.',
 			);
 		}
 
+		// Non-JSON output — return as message, not flagged as structured data.
 		return array(
-			'success' => true,
+			'success' => 0 === $return_code,
 			'message' => $raw_output,
 		);
 	}
 
 	/**
-	 * Extracts the subcommand (last word) from a command name.
+	 * Extracts the last segment of a command name as the subcommand.
+	 *
+	 * For "plugin list" returns "list". For "media regenerate" returns "regenerate".
+	 * Splits on spaces, not hyphens, so "regenerate-thumbnails" stays intact.
 	 */
 	private function get_subcommand( string $command_name ): string {
-		$parts = explode( ' ', $command_name );
-		return end( $parts );
+		$parts = explode( ' ', trim( $command_name ) );
+		return end( $parts ) ?: '';
 	}
 
 	/**
