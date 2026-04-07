@@ -39,6 +39,12 @@ class WP_CLI_Detector {
 			return $this->wp_cli_path;
 		}
 
+		// If shell execution is disabled, we can't detect WP-CLI externally.
+		if ( ! function_exists( 'shell_exec' ) || $this->is_shell_disabled() ) {
+			$this->wp_cli_path = false;
+			return false;
+		}
+
 		// Try to locate the wp binary on the system.
 		$which = shell_exec( 'command -v wp 2>/dev/null' );
 		if ( $which ) {
@@ -63,6 +69,15 @@ class WP_CLI_Detector {
 
 		$this->wp_cli_path = false;
 		return false;
+	}
+
+	/**
+	 * Checks if shell_exec is in the disabled functions list.
+	 */
+	private function is_shell_disabled(): bool {
+		$disabled = explode( ',', ini_get( 'disable_functions' ) ?: '' );
+		$disabled = array_map( 'trim', $disabled );
+		return in_array( 'shell_exec', $disabled, true );
 	}
 
 	/**

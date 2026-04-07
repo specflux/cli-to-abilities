@@ -19,22 +19,35 @@ const wpClient = new WordPressAbilitiesClient(WP_URL, WP_USER, WP_APP_PASSWORD);
 /** In-memory abilities cache with version-based invalidation. */
 let abilitiesCache = null;
 let cachedVersion = null;
+let lastFetchMs = 0;
+const FALLBACK_TTL_MS = 60 * 1000; // 1 min fallback if version endpoint fails
 
 /**
  * Returns cached abilities, re-fetching only when WordPress signals a change.
  *
- * Calls the lightweight /wp-cli-abilities/v1/version endpoint (few bytes)
- * to check if anything changed (plugin activated/deactivated/theme switched).
- * Only re-fetches the full abilities list when the version differs.
+ * Calls the lightweight /wp-cli-abilities/v1/version endpoint to check
+ * if anything changed. Falls back to a 1-minute TTL if the version
+ * endpoint is unavailable (auth error, network failure, etc).
  */
 async function getAbilities() {
   const currentVersion = await wpClient.getAbilitiesVersion();
+  const now = Date.now();
 
-  if (abilitiesCache && currentVersion === cachedVersion) {
-    return abilitiesCache;
+  // Version endpoint returned successfully — use version-based invalidation.
+  if (currentVersion !== null) {
+    if (abilitiesCache && currentVersion === cachedVersion) {
+      return abilitiesCache;
+    }
+  } else {
+    // Version endpoint failed (auth, network, etc) — fall back to TTL.
+    if (abilitiesCache && now - lastFetchMs < FALLBACK_TTL_MS) {
+      return abilitiesCache;
+    }
   }
+
   abilitiesCache = await wpClient.listAbilities();
   cachedVersion = currentVersion;
+  lastFetchMs = now;
   return abilitiesCache;
 }
 

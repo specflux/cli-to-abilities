@@ -342,9 +342,28 @@ class WP_CLI_Command_Parser {
 	}
 
 	/**
+	 * Checks whether shell execution functions are available.
+	 */
+	private function can_exec(): bool {
+		$disabled = explode( ',', ini_get( 'disable_functions' ) ?: '' );
+		$disabled = array_map( 'trim', $disabled );
+		return ! in_array( 'exec', $disabled, true )
+			&& ! in_array( 'shell_exec', $disabled, true )
+			&& function_exists( 'exec' );
+	}
+
+	/**
 	 * Executes the command externally by shelling out to the wp binary.
 	 */
 	private function execute_external( string $command_name, array $input ): array|WP_Error {
+		if ( ! $this->can_exec() ) {
+			return new WP_Error(
+				'wp_cli_exec_disabled',
+				__( 'Shell execution is disabled on this server (exec/shell_exec in disable_functions).', 'wp-cli-abilities' ),
+				array( 'status' => 500 )
+			);
+		}
+
 		$detector = new WP_CLI_Detector();
 		$wp_bin   = $detector->get_wp_cli_path();
 
@@ -357,11 +376,23 @@ class WP_CLI_Command_Parser {
 		}
 
 		$cmd_string = $this->build_command_string( $command_name, $input );
-		$full_cmd   = sprintf(
-			'%s --path=%s %s --format=json 2>&1',
+
+		// Not all commands support --format=json. Use it only for known list/get
+		// commands that produce structured output.
+		$subcommand  = $this->get_subcommand( $command_name );
+		$format_flag = in_array( $subcommand, array( 'list', 'get', 'search', 'check', 'status' ), true )
+			? ' --format=json'
+			: '';
+
+		$timeout = (int) apply_filters( 'wp_cli_abilities_exec_timeout', 30 );
+
+		$full_cmd = sprintf(
+			'timeout %d %s --path=%s %s --no-interaction%s 2>&1',
+			$timeout,
 			escapeshellarg( $wp_bin ),
 			escapeshellarg( ABSPATH ),
-			$cmd_string
+			$cmd_string,
+			$format_flag
 		);
 
 		$output      = array();
@@ -370,6 +401,18 @@ class WP_CLI_Command_Parser {
 		exec( $full_cmd, $output, $return_code );
 
 		$raw_output = implode( "\n", $output );
+
+		// Exit code 124 = timeout killed the process.
+		if ( 124 === $return_code ) {
+			return new WP_Error(
+				'wp_cli_timeout',
+				sprintf(
+					__( 'WP-CLI command timed out after %d seconds.', 'wp-cli-abilities' ),
+					$timeout
+				),
+				array( 'status' => 504, 'command' => "wp $command_name" )
+			);
+		}
 
 		if ( 0 !== $return_code ) {
 			return new WP_Error(
@@ -398,42 +441,52 @@ class WP_CLI_Command_Parser {
 	}
 
 	/**
+	 * Extracts the subcommand (last word) from a command name.
+	 */
+	private function get_subcommand( string $command_name ): string {
+		$parts = explode( ' ', $command_name );
+		return end( $parts );
+	}
+
+	/**
 	 * Assembles the WP-CLI command string from input parameters.
+	 *
+	 * Keys are validated against a strict allowlist pattern to prevent injection.
 	 */
 	private function build_command_string( string $command_name, array $input ): string {
 		$parts = array( $command_name );
 
 		foreach ( $input as $key => $value ) {
+			// Validate key: only allow alphanumeric, hyphens, underscores.
+			if ( ! preg_match( '/^[a-zA-Z0-9_\-]+$/', $key ) ) {
+				continue;
+			}
+
 			if ( 'additional_fields' === $key && is_array( $value ) ) {
 				foreach ( $value as $field => $field_value ) {
-					$parts[] = sprintf( '--%s=%s', escapeshellarg( $field ), escapeshellarg( $field_value ) );
+					if ( ! preg_match( '/^[a-zA-Z0-9_\-]+$/', $field ) ) {
+						continue;
+					}
+					$parts[] = sprintf( '--%s=%s', $field, escapeshellarg( (string) $field_value ) );
 				}
 				continue;
 			}
 
 			if ( is_bool( $value ) ) {
 				if ( $value ) {
-					$parts[] = '--' . escapeshellarg( $key );
+					$parts[] = '--' . $key;
 				}
 				continue;
 			}
 
 			// Positional args have numeric-ish keys or are marked positional by schema.
-			// For simplicity, if the key is a known positional name, emit bare value.
-			if ( ! str_starts_with( $key, '-' ) && ! is_numeric( $key ) ) {
-				// Check if this looks like a positional arg (no dashes, single word key).
-				$synopsis_parts = explode( ' ', $command_name );
-				$namespace      = $synopsis_parts[0] ?? '';
-
-				// Heuristic: common positional arg names.
-				$positionals = array( 'plugin', 'theme', 'slug', 'post_id', 'id', 'user', 'key', 'value', 'term', 'role', 'file' );
-				if ( in_array( $key, $positionals, true ) ) {
-					$parts[] = escapeshellarg( (string) $value );
-					continue;
-				}
+			$positionals = array( 'plugin', 'theme', 'slug', 'post_id', 'id', 'user', 'key', 'value', 'term', 'role', 'file' );
+			if ( in_array( $key, $positionals, true ) ) {
+				$parts[] = escapeshellarg( (string) $value );
+				continue;
 			}
 
-			$parts[] = sprintf( '--%s=%s', escapeshellarg( $key ), escapeshellarg( (string) $value ) );
+			$parts[] = sprintf( '--%s=%s', $key, escapeshellarg( (string) $value ) );
 		}
 
 		return implode( ' ', $parts );

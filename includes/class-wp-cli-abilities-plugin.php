@@ -30,10 +30,16 @@ class WP_CLI_Abilities_Plugin {
 			add_action( 'admin_init', array( $this, 'register_settings' ) );
 		}
 
-		// Add a cache-clear hook when plugins are activated/deactivated.
+		// Cache-clear hooks for plugin/theme/WP-CLI package changes.
 		add_action( 'activated_plugin', array( $this, 'on_abilities_changed' ) );
 		add_action( 'deactivated_plugin', array( $this, 'on_abilities_changed' ) );
 		add_action( 'switch_theme', array( $this, 'on_abilities_changed' ) );
+		add_action( 'upgrader_process_complete', array( $this, 'on_abilities_changed' ) );
+
+		// When running inside WP-CLI, also hook package changes.
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			add_action( 'after_wp_cli_packages_updated', array( $this, 'on_abilities_changed' ) );
+		}
 
 		// REST endpoint for MCP server cache invalidation.
 		add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
@@ -41,10 +47,25 @@ class WP_CLI_Abilities_Plugin {
 
 	/**
 	 * Called when the set of available abilities may have changed.
-	 * Clears the command cache and bumps the version counter.
+	 *
+	 * Uses a shutdown hook to bump the version AFTER the current request
+	 * finishes, avoiding the race where MCP sees the new version but
+	 * abilities haven't re-registered yet.
 	 */
 	public function on_abilities_changed(): void {
 		$this->detector->clear_cache();
+
+		// Defer version bump to shutdown so the next request will have
+		// both the new version AND the re-registered abilities.
+		if ( ! has_action( 'shutdown', array( $this, 'bump_version' ) ) ) {
+			add_action( 'shutdown', array( $this, 'bump_version' ) );
+		}
+	}
+
+	/**
+	 * Bumps the abilities version. Called at shutdown.
+	 */
+	public function bump_version(): void {
 		update_option( 'wp_cli_abilities_version', wp_generate_uuid4() );
 	}
 
@@ -66,7 +87,10 @@ class WP_CLI_Abilities_Plugin {
 					'version' => get_option( 'wp_cli_abilities_version', '' ),
 				) );
 			},
-			'permission_callback' => '__return_true',
+			// Requires authentication — prevents leaking that plugin is active.
+			'permission_callback' => function () {
+				return current_user_can( 'manage_options' );
+			},
 		) );
 	}
 
