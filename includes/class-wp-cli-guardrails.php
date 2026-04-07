@@ -5,6 +5,10 @@
  *
  * @package WP_CLI_Abilities
  */
+
+/**
+ * Guardrails class for WP-CLI ability execution.
+ */
 class WP_CLI_Guardrails {
 
 	/**

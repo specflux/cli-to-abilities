@@ -4,6 +4,10 @@
  *
  * @package WP_CLI_Abilities
  */
+
+/**
+ * Main plugin orchestrator class.
+ */
 class WP_CLI_Abilities_Plugin {
 
 	/**

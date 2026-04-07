@@ -4,6 +4,10 @@
  *
  * @package WP_CLI_Abilities
  */
+
+/**
+ * WP-CLI ability registrar class.
+ */
 class WP_CLI_Ability_Registrar {
 
 	/**

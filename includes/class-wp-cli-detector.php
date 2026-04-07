@@ -4,6 +4,10 @@
  *
  * @package WP_CLI_Abilities
  */
+
+/**
+ * WP-CLI detector class.
+ */
 class WP_CLI_Detector {
 
 	/**

@@ -4,6 +4,10 @@
  *
  * @package WP_CLI_Abilities
  */
+
+/**
+ * WP-CLI command parser class.
+ */
 class WP_CLI_Command_Parser {
 
 	/**
@@ -185,7 +189,7 @@ class WP_CLI_Command_Parser {
 			$optional = ( str_starts_with( $token, '[' ) );
 			$clean    = trim( $token, '[]' );
 
-			// Flag: --flag
+			// Flag: --flag.
 			if ( preg_match( '/^--(\w[\w\-]*)$/', $clean, $m ) ) {
 				$properties[ $m[1] ] = array(
 					'type'        => 'boolean',
@@ -194,7 +198,7 @@ class WP_CLI_Command_Parser {
 				continue;
 			}
 
-			// Associative: --name=<value>
+			// Associative: --name=<value>.
 			if ( preg_match( '/^--(\w[\w\-]*)=<([\w\-]+)>$/', $clean, $m ) ) {
 				$prop = array(
 					'type'        => 'string',
@@ -214,7 +218,7 @@ class WP_CLI_Command_Parser {
 				continue;
 			}
 
-			// Positional: <name>
+			// Positional: <name>.
 			if ( preg_match( '/^<([\w\-]+)>$/', $clean, $m ) ) {
 				$properties[ $m[1] ] = array(
 					'type'        => 'string',
@@ -226,7 +230,7 @@ class WP_CLI_Command_Parser {
 				continue;
 			}
 
-			// Generic: --<field>=<value>
+			// Generic: --<field>=<value>.
 			if ( preg_match( '/^--<([\w\-]+)>=<([\w\-]+)>$/', $clean ) ) {
 				$properties['additional_fields'] = array(
 					'type'                 => 'object',
