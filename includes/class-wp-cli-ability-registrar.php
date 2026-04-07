@@ -8,11 +8,12 @@ class WP_CLI_Ability_Registrar {
 	private WP_CLI_Command_Parser $parser;
 
 	/**
-	 * Commands to exclude from ability registration.
+	 * Commands that are NEVER exposed — too dangerous for remote execution.
 	 *
 	 * @var string[]
 	 */
-	private const EXCLUDED_COMMANDS = array(
+	private const DENIED_COMMANDS = array(
+		// Meta / internal.
 		'cli',
 		'help',
 		'shell',
@@ -23,6 +24,7 @@ class WP_CLI_Ability_Registrar {
 		'cli completions',
 		'cli alias',
 		'cli has-command',
+		// Package management.
 		'package',
 		'package install',
 		'package uninstall',
@@ -30,6 +32,47 @@ class WP_CLI_Ability_Registrar {
 		'package path',
 		'package browse',
 		'package update',
+		// Arbitrary code execution.
+		'eval',
+		'eval-file',
+		// Database — data exfil / destruction risk.
+		'db export',
+		'db import',
+		'db drop',
+		'db create',
+		'db reset',
+		'db query',
+		'db cli',
+		// Config — credential exposure.
+		'config get',
+		'config set',
+		'config delete',
+		'config edit',
+		'config create',
+		'config list',
+		'config path',
+		'config has',
+		// Server / filesystem.
+		'server',
+		'scaffold',
+	);
+
+	/**
+	 * Subcommands that are considered destructive and require opt-in.
+	 *
+	 * @var string[]
+	 */
+	private const DESTRUCTIVE_SUBCOMMANDS = array(
+		'delete',
+		'deactivate',
+		'uninstall',
+		'drop',
+		'reset',
+		'clean',
+		'flush',
+		'remove',
+		'spam',
+		'trash',
 	);
 
 	public function __construct( WP_CLI_Detector $detector, WP_CLI_Command_Parser $parser ) {
@@ -67,11 +110,12 @@ class WP_CLI_Ability_Registrar {
 			return;
 		}
 
-		$commands      = $this->detector->discover_commands();
-		$allowed       = $this->get_allowed_commands();
-		$blocked       = $this->get_blocked_commands();
-		$registered    = 0;
-		$max_abilities = (int) get_option( 'wp_cli_abilities_max', 200 );
+		$commands              = $this->detector->discover_commands();
+		$allowed               = $this->get_allowed_commands();
+		$blocked               = $this->get_blocked_commands();
+		$destructive_enabled   = (bool) get_option( 'wp_cli_abilities_allow_destructive', false );
+		$registered            = 0;
+		$max_abilities         = (int) get_option( 'wp_cli_abilities_max', 200 );
 
 		foreach ( $commands as $command ) {
 			if ( $registered >= $max_abilities ) {
@@ -80,7 +124,13 @@ class WP_CLI_Ability_Registrar {
 
 			$name = $command['name'] ?? '';
 
-			if ( $this->is_excluded( $name ) ) {
+			// Hard denylist — never exposed.
+			if ( $this->is_denied( $name ) ) {
+				continue;
+			}
+
+			// Skip destructive commands unless explicitly opted in.
+			if ( ! $destructive_enabled && $this->is_destructive( $name ) ) {
 				continue;
 			}
 
@@ -113,10 +163,31 @@ class WP_CLI_Ability_Registrar {
 	}
 
 	/**
-	 * Checks whether a command is in the exclusion list.
+	 * Checks whether a command is in the hard denylist.
 	 */
-	private function is_excluded( string $name ): bool {
-		return in_array( $name, self::EXCLUDED_COMMANDS, true );
+	private function is_denied( string $name ): bool {
+		// Exact match.
+		if ( in_array( $name, self::DENIED_COMMANDS, true ) ) {
+			return true;
+		}
+
+		// Prefix match — e.g. "cli" denies "cli info", "cli version", etc.
+		foreach ( self::DENIED_COMMANDS as $denied ) {
+			if ( str_starts_with( $name, $denied . ' ' ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Checks whether a command is destructive based on its subcommand.
+	 */
+	private function is_destructive( string $name ): bool {
+		$parts      = explode( ' ', $name );
+		$subcommand = end( $parts );
+		return in_array( $subcommand, self::DESTRUCTIVE_SUBCOMMANDS, true );
 	}
 
 	/**

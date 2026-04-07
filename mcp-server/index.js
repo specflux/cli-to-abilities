@@ -262,15 +262,19 @@ server.tool(
 // ---------------------------------------------------------------------------
 server.tool(
   "wp_abilities_run",
-  "Execute a WordPress ability (WP-CLI command). First use wp_abilities_list to discover available abilities, then wp_abilities_describe to check parameters, then this tool to run it.",
+  "Execute a WordPress ability (WP-CLI command). First use wp_abilities_list to discover available abilities, then wp_abilities_describe to check parameters, then this tool to run it. Set dry_run=true to preview the command without executing.",
   {
     ability: z.string().describe('Ability name, e.g. "wp-cli/plugin-list"'),
     input: z
       .record(z.string(), z.any())
       .optional()
       .describe("Input parameters as key-value pairs matching the ability's input_schema"),
+    dry_run: z
+      .boolean()
+      .optional()
+      .describe("Preview the command without executing it"),
   },
-  async ({ ability: abilityName, input }) => {
+  async ({ ability: abilityName, input, dry_run }) => {
     try {
       // Validate the ability exists before executing.
       const abilities = await getAbilities();
@@ -296,6 +300,20 @@ server.tool(
             { type: "text", text: `invalid input: ${validationError}` },
           ],
           isError: true,
+        };
+      }
+
+      // Dry-run: preview without executing.
+      if (dry_run) {
+        const params = { ...(input || {}), _dry_run: true };
+        const preview = await wpClient.executeAbility(abilityName, params);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `[DRY RUN] ${typeof preview === "string" ? preview : JSON.stringify(preview)}`,
+            },
+          ],
         };
       }
 

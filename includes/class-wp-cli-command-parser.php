@@ -298,19 +298,43 @@ class WP_CLI_Command_Parser {
 	/**
 	 * Executes a WP-CLI command with the given input.
 	 *
+	 * Applies guardrails (rate limiting, audit logging) before execution.
+	 *
 	 * @param string $command_name The WP-CLI command (e.g. "plugin list").
 	 * @param array  $input        Input parameters mapped from the ability schema.
 	 * @return array|WP_Error
 	 */
 	public function execute_wp_cli_command( string $command_name, $input = array() ) {
-		$input = is_array( $input ) ? $input : array();
+		$input   = is_array( $input ) ? $input : array();
+		$user_id = get_current_user_id();
 
-		// If running inside WP-CLI, use its internal runner.
-		if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
-			return $this->execute_internal( $command_name, $input );
+		// Dry-run: return what would be executed without running it.
+		if ( ! empty( $input['_dry_run'] ) ) {
+			unset( $input['_dry_run'] );
+			return array(
+				'dry_run' => true,
+				'command' => 'wp ' . $this->build_command_string( $command_name, $input ),
+				'user_id' => $user_id,
+			);
 		}
 
-		return $this->execute_external( $command_name, $input );
+		// Rate limit.
+		$rate_check = WP_CLI_Guardrails::check_rate_limit( $user_id, $command_name );
+		if ( is_wp_error( $rate_check ) ) {
+			return $rate_check;
+		}
+
+		// Execute.
+		if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
+			$result = $this->execute_internal( $command_name, $input );
+		} else {
+			$result = $this->execute_external( $command_name, $input );
+		}
+
+		// Audit log.
+		WP_CLI_Guardrails::log_execution( $command_name, $input, $result, $user_id );
+
+		return $result;
 	}
 
 	/**

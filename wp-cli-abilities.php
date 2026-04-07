@@ -23,6 +23,7 @@ define( 'WP_CLI_ABILITIES_PLUGIN_FILE', __FILE__ );
 
 require_once WP_CLI_ABILITIES_PLUGIN_DIR . 'includes/class-wp-cli-detector.php';
 require_once WP_CLI_ABILITIES_PLUGIN_DIR . 'includes/class-wp-cli-command-parser.php';
+require_once WP_CLI_ABILITIES_PLUGIN_DIR . 'includes/class-wp-cli-guardrails.php';
 require_once WP_CLI_ABILITIES_PLUGIN_DIR . 'includes/class-wp-cli-ability-registrar.php';
 require_once WP_CLI_ABILITIES_PLUGIN_DIR . 'includes/class-wp-cli-abilities-plugin.php';
 
