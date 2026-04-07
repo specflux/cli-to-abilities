@@ -133,4 +133,24 @@ export class WordPressAbilitiesClient {
     const url = `${this.abilitiesEndpoint}/${encodeURIComponent(abilityName)}`;
     return this.request(url);
   }
+
+  /**
+   * Fetches the lightweight abilities version string.
+   *
+   * This is a tiny endpoint (~50 bytes) that changes whenever plugins
+   * are activated/deactivated or the theme is switched. Used by the MCP
+   * server to decide if the full abilities list needs re-fetching.
+   *
+   * @returns {Promise<string|null>} Version string, or null on error.
+   */
+  async getAbilitiesVersion() {
+    try {
+      const url = `${this.baseUrl}/wp-json/wp-cli-abilities/v1/version`;
+      const data = await this.request(url);
+      return data?.version || null;
+    } catch {
+      // If the endpoint fails, return null to force a re-fetch.
+      return null;
+    }
+  }
 }

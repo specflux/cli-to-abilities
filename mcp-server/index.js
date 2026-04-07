@@ -16,21 +16,25 @@ const server = new McpServer({
 
 const wpClient = new WordPressAbilitiesClient(WP_URL, WP_USER, WP_APP_PASSWORD);
 
-/** In-memory abilities cache. */
+/** In-memory abilities cache with version-based invalidation. */
 let abilitiesCache = null;
-let cacheTimestamp = 0;
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+let cachedVersion = null;
 
 /**
- * Returns cached abilities or fetches fresh from WordPress.
+ * Returns cached abilities, re-fetching only when WordPress signals a change.
+ *
+ * Calls the lightweight /wp-cli-abilities/v1/version endpoint (few bytes)
+ * to check if anything changed (plugin activated/deactivated/theme switched).
+ * Only re-fetches the full abilities list when the version differs.
  */
 async function getAbilities() {
-  const now = Date.now();
-  if (abilitiesCache && now - cacheTimestamp < CACHE_TTL_MS) {
+  const currentVersion = await wpClient.getAbilitiesVersion();
+
+  if (abilitiesCache && currentVersion === cachedVersion) {
     return abilitiesCache;
   }
   abilitiesCache = await wpClient.listAbilities();
-  cacheTimestamp = now;
+  cachedVersion = currentVersion;
   return abilitiesCache;
 }
 

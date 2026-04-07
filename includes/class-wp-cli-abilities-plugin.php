@@ -31,9 +31,21 @@ class WP_CLI_Abilities_Plugin {
 		}
 
 		// Add a cache-clear hook when plugins are activated/deactivated.
-		add_action( 'activated_plugin', array( $this, 'clear_command_cache' ) );
-		add_action( 'deactivated_plugin', array( $this, 'clear_command_cache' ) );
-		add_action( 'switch_theme', array( $this, 'clear_command_cache' ) );
+		add_action( 'activated_plugin', array( $this, 'on_abilities_changed' ) );
+		add_action( 'deactivated_plugin', array( $this, 'on_abilities_changed' ) );
+		add_action( 'switch_theme', array( $this, 'on_abilities_changed' ) );
+
+		// REST endpoint for MCP server cache invalidation.
+		add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
+	}
+
+	/**
+	 * Called when the set of available abilities may have changed.
+	 * Clears the command cache and bumps the version counter.
+	 */
+	public function on_abilities_changed(): void {
+		$this->detector->clear_cache();
+		update_option( 'wp_cli_abilities_version', wp_generate_uuid4() );
 	}
 
 	/**
@@ -41,6 +53,21 @@ class WP_CLI_Abilities_Plugin {
 	 */
 	public function clear_command_cache(): void {
 		$this->detector->clear_cache();
+	}
+
+	/**
+	 * Registers the lightweight REST route for cache invalidation.
+	 */
+	public function register_rest_routes(): void {
+		register_rest_route( 'wp-cli-abilities/v1', '/version', array(
+			'methods'             => 'GET',
+			'callback'            => function () {
+				return rest_ensure_response( array(
+					'version' => get_option( 'wp_cli_abilities_version', '' ),
+				) );
+			},
+			'permission_callback' => '__return_true',
+		) );
 	}
 
 	/**
