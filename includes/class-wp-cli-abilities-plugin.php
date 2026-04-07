@@ -135,6 +135,12 @@ class WP_CLI_Abilities_Plugin {
 			'default'           => false,
 		) );
 
+		register_setting( 'wp_cli_abilities', 'wp_cli_abilities_allow_eval', array(
+			'type'              => 'boolean',
+			'sanitize_callback' => 'rest_sanitize_boolean',
+			'default'           => false,
+		) );
+
 		register_setting( 'wp_cli_abilities', 'wp_cli_abilities_audit_enabled', array(
 			'type'              => 'boolean',
 			'sanitize_callback' => 'rest_sanitize_boolean',
@@ -206,7 +212,7 @@ class WP_CLI_Abilities_Plugin {
 			__( 'Guardrails', 'wp-cli-abilities' ),
 			function () {
 				echo '<p>' . esc_html__(
-					'Safety controls for ability execution. Dangerous commands (eval, db, config, shell) are always blocked.',
+					'Safety controls for ability execution. Dangerous commands (db, config, shell) are always blocked.',
 					'wp-cli-abilities'
 				) . '</p>';
 			},
@@ -225,6 +231,24 @@ class WP_CLI_Abilities_Plugin {
 					checked( $checked, true, false ),
 					esc_html__( 'Enable delete, uninstall, flush, reset commands', 'wp-cli-abilities' ),
 					esc_html__( 'When disabled, commands like plugin delete, user delete, cache flush are not registered as abilities.', 'wp-cli-abilities' )
+				);
+			},
+			'wp-cli-abilities',
+			'wp_cli_abilities_guardrails'
+		);
+
+		add_settings_field(
+			'wp_cli_abilities_allow_eval',
+			__( 'Allow eval commands', 'wp-cli-abilities' ),
+			function () {
+				$checked = get_option( 'wp_cli_abilities_allow_eval', false );
+				printf(
+					'<label><input type="checkbox" name="wp_cli_abilities_allow_eval" value="1" %s />
+					%s</label>
+					<p class="description">%s</p>',
+					checked( $checked, true, false ),
+					esc_html__( 'Enable wp eval and wp eval-file commands', 'wp-cli-abilities' ),
+					esc_html__( 'Allows arbitrary PHP code execution. Only enable if you trust all API consumers.', 'wp-cli-abilities' )
 				);
 			},
 			'wp-cli-abilities',

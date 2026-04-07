@@ -32,9 +32,6 @@ class WP_CLI_Ability_Registrar {
 		'package path',
 		'package browse',
 		'package update',
-		// Arbitrary code execution.
-		'eval',
-		'eval-file',
 		// Database — data exfil / destruction risk.
 		'db export',
 		'db import',
@@ -55,6 +52,16 @@ class WP_CLI_Ability_Registrar {
 		// Server / filesystem.
 		'server',
 		'scaffold',
+	);
+
+	/**
+	 * Commands that require explicit opt-in to be registered.
+	 *
+	 * @var string[]
+	 */
+	private const EVAL_COMMANDS = array(
+		'eval',
+		'eval-file',
 	);
 
 	/**
@@ -114,6 +121,7 @@ class WP_CLI_Ability_Registrar {
 		$allowed               = $this->get_allowed_commands();
 		$blocked               = $this->get_blocked_commands();
 		$destructive_enabled   = (bool) get_option( 'wp_cli_abilities_allow_destructive', false );
+		$eval_enabled          = (bool) get_option( 'wp_cli_abilities_allow_eval', false );
 		$registered            = 0;
 		$max_abilities         = (int) get_option( 'wp_cli_abilities_max', 200 );
 
@@ -126,6 +134,11 @@ class WP_CLI_Ability_Registrar {
 
 			// Hard denylist — never exposed.
 			if ( $this->is_denied( $name ) ) {
+				continue;
+			}
+
+			// Skip eval/eval-file unless explicitly opted in.
+			if ( ! $eval_enabled && in_array( $name, self::EVAL_COMMANDS, true ) ) {
 				continue;
 			}
 
